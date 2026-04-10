@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+import smbus2
+import time
+import math
+
+# ==============================
+# I2C / IMU CONFIG
+# ==============================
+I2C_BUS_ID = 1          # Most Raspberry Pi models use bus 1
+IMU_ADDR   = 0x68       # Common address for MPU-6050 / GY-521
+
+# MPU-6050 registers
+PWR_MGMT_1 = 0x6B
+ACCEL_XOUT_H = 0x3B
+GYRO_XOUT_H  = 0x43
+
+bus = smbus2.SMBus(I2C_BUS_ID)
+
+def imu_write(reg, value):
+    bus.write_byte_data(IMU_ADDR, reg, value)
+
+def imu_read_word(reg):
+    high = bus.read_byte_data(IMU_ADDR, reg)
+    low  = bus.read_byte_data(IMU_ADDR, reg + 1)
+    value = (high << 8) | low
+    # convert to signed
+    if value > 32767:
+        value -= 65536
+    return value
+
+def init_imu():
+    # Wake up the MPU-6050 (it starts in sleep mode)
+    imu_write(PWR_MGMT_1, 0x00)
+    time.sleep(0.1)
+
+def read_accel_gyro():
+    ax = imu_read_word(ACCEL_XOUT_H)
+    ay = imu_read_word(ACCEL_XOUT_H + 2)
+    az = imu_read_word(ACCEL_XOUT_H + 4)
+
+    gx = imu_read_word(GYRO_XOUT_H)
+    gy = imu_read_word(GYRO_XOUT_H + 2)
+    gz = imu_read_word(GYRO_XOUT_H + 4)
+
+    # Scale factors from datasheet (±2g, ±250°/s)
+    ax_g = ax / 16384.0
+    ay_g = ay / 16384.0
+    az_g = az / 16384.0
+
+    gx_dps = gx / 131.0
+    gy_dps = gy / 131.0
+    gz_dps = gz / 131.0
+
+    return ax_g, ay_g, az_g, gx_dps, gy_dps, gz_dps
+
+def get_angles_complementary():
+    """
+    Simple complementary filter:
+    - accel gives long-term (static) orientation
+    - gyro gives short-term dynamics
+    """
+    init_imu()
+
+    # Initial read
+    ax, ay, az, gx, gy, gz = read_accel_gyro()
+    # Compute initial pitch/roll from accel
+    pitch = math.degrees(math.atan2(ax, math.sqrt(ay*ay + az*az)))
+    roll  = math.degrees(math.atan2(ay, math.sqrt(ax*ax + az*az)))
+
+    alpha = 0.98           # complementary filter coefficient
+    dt = 0.02              # loop time [s]
+    print("Starting IMU loop... Press Ctrl+C to stop.")
+
+    try:
+        while True:
+            time.sleep(dt)
+            ax, ay, az, gx, gy, gz = read_accel_gyro()
+
+            # Gyro integration
+            pitch_gyro = pitch + gx * dt
+            roll_gyro  = roll  + gy * dt
+
+            # Accelerometer angles
+            pitch_acc = math.degrees(math.atan2(ax, math.sqrt(ay*ay + az*az)))
+            roll_acc  = math.degrees(math.atan2(ay, math.sqrt(ax*ax + az*az)))
+
+            # Complementary filter
+            pitch = alpha * pitch_gyro + (1 - alpha) * pitch_acc
+            roll  = alpha * roll_gyro  + (1 - alpha) * roll_acc
+
+            print(f"Pitch: {pitch:6.2f} deg | Roll: {roll:6.2f} deg")
+
+            # Later you can map:
+            #   pitch > +threshold => forward
+            #   pitch < -threshold => backward
+            #   roll  > +threshold => right
+            #   roll  < -threshold => left
+
+    except KeyboardInterrupt:
+        print("\nIMU reading stopped.")
+
+
+if __name__ == "__main__":
+    get_angles_complementary()
