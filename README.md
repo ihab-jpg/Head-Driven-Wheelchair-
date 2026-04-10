@@ -1,19 +1,24 @@
-# Head-Driven-Wheelchair-
-My project is  a head-driven wheelchair that is designed for people with quadriplegia (paralyzed people that can only move their head). This design consists of an IMU sensors that picks up the signal, a Raspberry Pi controller, and 2 synchronized motors using PID. 
+# Head-Driven-Wheelchair
+My project is a head-driven wheelchair designed for individuals with quadriplegia (people with paralysis who can only move their head). This design consists of an IMU sensor that picks up movement signals, a Raspberry Pi controller, and two motors synchronized using a PID algorithm.
 
-Welcome to my project repositry. I am Ihab, a mechatronics engineering student that love problem solving, and the problem we are solving here is how to make indipendancy more common especially for people with disabilities. 
+Welcome to my project repository. I am Ihab, a mechatronics engineering student who loves problem-solving. The problem we are addressing here is how to make independence more accessible, especially for people with disabilities.
 
-The project is simple, yet effective and does the job, I will be talking about the main components of the project and for each I will upload its algorithm code. 
+The project is simple yet effective. I will discuss the main components and upload the algorithm code for each.
 
+1. Head Movement Sensing
 
-First of all, the head movement sensing technology is inspired from the F-35 pilot helmet, and consists of an IMU6050 sensor (please find its datasheet attached on the repositry) which detects the head movement direction. Its a 6-axis sensor that consists of a gyroscope and an accelorometer, which both combined and using internal variable capacitance reading technology, detect how fast it is rotating, and how fast is the speed changing respectivly. We are intereted in the terms roll, pitch, and yaw, which define the rotation about all the 3 axsis x, y, and z respectivly. The sensor is mounted on top of the head of the person, and connected using a flexible wire to a raspberry Pi controller that is fixed under the seat, the connection is using I2C protocol, and 2 power wires, which add up to 4 thin wires (please find the connection diagram attached). 
+Shutterstock
+The head-movement sensing technology is inspired by the F-35 pilot helmet. It utilizes an MPU6050 sensor (please find the datasheet attached in the repository) to detect the direction of head movement. It is a 6-axis sensor consisting of a gyroscope and an accelerometer. Combined with internal variable capacitance technology, these components detect rotation speed and changes in linear velocity, respectively. We are interested in the terms roll, pitch, and yaw, which define rotation about the X, Y, and Z axes. The sensor is mounted on the user's head and connected via a flexible wire to a Raspberry Pi controller fixed under the seat. This connection uses the I2C protocol and two power wires, totaling four thin wires (see the attached connection diagram).
 
-Secondly and most importantly the motors, I used 2 DC 6-60V 400W BLDC Three Phase DC Brushless Motor, which I took from an abadoned hover borad. These motors have 8 wires hanging out of them, 3 power wires and 5 wires for the internal hall sensor. I drived them using a special Motor Controller PWM Hall Motor Control Driver Board 12V 24V 48V. This driver is a board that takes its input from the power source directly and its logic control(PWM, enabler, stop, and direction) from the main controller (in my case Raspberry Pi) (please find its datasheet attached).
+2. Propulsion and Control
+Most importantly, the motors: I used two 400W Three-Phase BLDC (Brushless DC) motors salvaged from an abandoned hoverboard. These motors have eight wires: three for power and five for the internal Hall sensors. I drove them using a specialized PWM Hall Motor Control Driver Board (12V–48V). This driver takes power directly from the source and receives logic control signals (PWM, Enable, Stop, and Direction) from the main controller—the Raspberry Pi (datasheet attached).
 
-The motor driver is a multi purpose driver where you can use it to:
-1) control the motor on and off at a fixed speed using its internal potentiometer
-2) control the motor speed using an external potentiometer (knob) that you can wire easily
-3) PWM control, which is the most powerful one, where you can do all the above features plus change its direction, PWM stands for pulse width modulation, where a generated pulse that its width is changed based on the required speed and direction is encoded and sent to the driver, where the driver decodes it and perform the required control.
-    To equip the PWM feature, you will need to make a jumper connection between 2 nodes at the controller (I will attach a photo of the driver with labels)
+The motor driver is versatile and can be used to:
 
+Toggle the motor on and off at a fixed speed using its internal potentiometer.
 
+Control motor speed via an external potentiometer (knob).
+
+Utilize PWM control, which is the most powerful method. PWM (Pulse Width Modulation) allows for precise speed adjustments and direction changes by varying the width of the generated pulses sent to the driver.
+
+To enable the PWM feature, you must place a jumper between two nodes on the controller (I will attach a labeled photo of the driver for reference).
