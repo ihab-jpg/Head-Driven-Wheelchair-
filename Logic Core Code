@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+import RPi.GPIO as GPIO
+import time
+import threading
+
+# ==============================
+# Pin configuration (BCM)
+# ==============================
+
+# Left wheel
+HALL_L = 21
+PWM_L  = 18
+DIR_L  = 23
+
+# Right wheel
+HALL_R = 20
+PWM_R  = 19
+DIR_R  = 24
+
+# ==============================
+# Control parameters
+# ==============================
+PULSES_PER_REV = 16.0
+PWM_FREQ_HZ    = 1000
+
+CONTROL_INTERVAL   = 0.5   # seconds between PI updates
+MIN_EDGE_INTERVAL  = 0.0005  # debounce (seconds)
+
+KP = 0.4   # proportional gain (tune)
+KI = 0.2   # integral gain (tune)
+
+MAX_DUTY = 100.0
+MIN_DUTY = 0.0
+
+# ==============================
+# Global state
+# ==============================
+GPIO.setmode(GPIO.BCM)
+GPIO.setwarnings(False)
+
+GPIO.setup(PWM_L, GPIO.OUT)
+GPIO.setup(DIR_L, GPIO.OUT)
+
+GPIO.setup(PWM_R, GPIO.OUT)
+GPIO.setup(DIR_R, GPIO.OUT)
+
+GPIO.setup(HALL_L, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(HALL_R, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+pwmL = GPIO.PWM(PWM_L, PWM_FREQ_HZ)
+pwmR = GPIO.PWM(PWM_R, PWM_FREQ_HZ)
+
+pwmL.start(0)
+pwmR.start(0)
+
+# Pulse counters
+pulses_L = 0
+pulses_R = 0
+
+last_edge_time_L = 0.0
+last_edge_time_R = 0.0
+
+# PI state
+target_rpm   = 0.0
+integral_L   = 0.0
+integral_R   = 0.0
+duty_L       = 0.0
+duty_R       = 0.0
+
+lock = threading.Lock()
+running = True
+
+# ==============================
+# Helper functions
+# ==============================
+
+def set_direction_forward():
+    GPIO.output(DIR_L, GPIO.HIGH)
+    GPIO.output(DIR_R, GPIO.HIGH)
+
+def set_duty(duty_left, duty_right):
+    global duty_L, duty_R
+    duty_left  = max(MIN_DUTY, min(MAX_DUTY, duty_left))
+    duty_right = max(MIN_DUTY, min(MAX_DUTY, duty_right))
+    duty_L, duty_R = duty_left, duty_right
+    pwmL.ChangeDutyCycle(duty_left)
+    pwmR.ChangeDutyCycle(duty_right)
+
+def stop_motors():
+    set_duty(0.0, 0.0)
+
+# ==============================
+# Hall sensor callbacks
+# ==============================
+
+def hall_left_callback(channel):
+    global pulses_L, last_edge_time_L
+    now = time.time()
+    if now - last_edge_time_L < MIN_EDGE_INTERVAL:
+        return
+    last_edge_time_L = now
+    with lock:
+        pulses_L += 1
+
+def hall_right_callback(channel):
+    global pulses_R, last_edge_time_R
+    now = time.time()
+    if now - last_edge_time_R < MIN_EDGE_INTERVAL:
+        return
+    last_edge_time_R = now
+    with lock:
+        pulses_R += 1
+
+GPIO.add_event_detect(HALL_L, GPIO.FALLING, callback=hall_left_callback, bouncetime=0)
+GPIO.add_event_detect(HALL_R, GPIO.FALLING, callback=hall_right_callback, bouncetime=0)
+
+# ==============================
+# Control loop
+# ==============================
+
+def control_loop():
+    global pulses_L, pulses_R, integral_L, integral_R, target_rpm, running
+
+    print("Starting PI speed control loop...")
+    previous_time = time.time()
+
+    while running:
+        time.sleep(CONTROL_INTERVAL)
+        current_time = time.time()
+        dt = current_time - previous_time
+        previous_time = current_time
+
+        with lock:
+            pL = pulses_L
+            pR = pulses_R
+            pulses_L = 0
+            pulses_R = 0
+
+        # Compute RPM (pulses in this interval → rev/s → RPM)
+        rpm_L = (pL / PULSES_PER_REV) / dt * 60.0
+        rpm_R = (pR / PULSES_PER_REV) / dt * 60.0
+
+        # PI control for each wheel to track the same target_rpm
+        error_L = target_rpm - rpm_L
+        error_R = target_rpm - rpm_R
+
+        # Integrator update
+        integral_L += error_L * dt
+        integral_R += error_R * dt
+
+        # Raw PI outputs (duty cycles)
+        uL = KP * error_L + KI * integral_L
+        uR = KP * error_R + KI * integral_R
+
+        # Feed-forward: if target_rpm > 0, add some base duty
+        base_duty = 20.0 if target_rpm > 0 else 0.0
+
+        new_duty_L = base_duty + uL
+        new_duty_R = base_duty + uR
+
+        # Saturation + anti-windup
+        if new_duty_L > MAX_DUTY:
+            new_duty_L = MAX_DUTY
+            # optional: clamp integrator_L
+        elif new_duty_L < MIN_DUTY:
+            new_duty_L = MIN_DUTY
+
+        if new_duty_R > MAX_DUTY:
+            new_duty_R = MAX_DUTY
+        elif new_duty_R < MIN_DUTY:
+            new_duty_R = MIN_DUTY
+
+        set_duty(new_duty_L, new_duty_R)
+
+        print(f"[PI] Target: {target_rpm:6.1f} RPM | "
+              f"L: {rpm_L:6.1f} rpm (duty {new_duty_L:5.1f}%) | "
+              f"R: {rpm_R:6.1f} rpm (duty {new_duty_R:5.1f}%)")
+
+# ==============================
+# Main
+# ==============================
+
+if __name__ == "__main__":
+    set_direction_forward()
+
+    control_thread = threading.Thread(target=control_loop, daemon=True)
+    control_thread.start()
+
+    try:
+        while True:
+            cmd = input("Enter target RPM (0 to stop, 'q' to quit): ").strip().lower()
+            if cmd == 'q':
+                break
+            try:
+                rpm = float(cmd)
+            except ValueError:
+                print("Invalid number.")
+                continue
+
+            with lock:
+                target_rpm = max(0.0, rpm)
+            if target_rpm == 0:
+                stop_motors()
+
+    except KeyboardInterrupt:
+        pass
+    finally:
+        running = False
+        stop_motors()
+        time.sleep(0.2)
+        pwmL.stop()
+        pwmR.stop()
+        GPIO.cleanup()
+        print("\nPI control stopped and GPIO cleaned up.")
