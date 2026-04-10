@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+import RPi.GPIO as GPIO
+import time
+
+# ==============================
+# Pin configuration (BCM)
+# ==============================
+PWM_LEFT   = 18
+DIR_LEFT   = 23
+
+PWM_RIGHT  = 19
+DIR_RIGHT  = 24
+
+PWM_FREQ_HZ = 1000  # PWM frequency
+
+GPIO.setmode(GPIO.BCM)
+GPIO.setwarnings(False)
+
+GPIO.setup(PWM_LEFT, GPIO.OUT)
+GPIO.setup(DIR_LEFT, GPIO.OUT)
+
+GPIO.setup(PWM_RIGHT, GPIO.OUT)
+GPIO.setup(DIR_RIGHT, GPIO.OUT)
+
+pwmL = GPIO.PWM(PWM_LEFT, PWM_FREQ_HZ)
+pwmR = GPIO.PWM(PWM_RIGHT, PWM_FREQ_HZ)
+
+pwmL.start(0)
+pwmR.start(0)
+
+def set_motors(left_speed, right_speed):
+    """
+    left_speed, right_speed in range [-100, 100]
+    sign = direction, abs(value) = duty cycle
+    """
+    # LEFT
+    if left_speed >= 0:
+        GPIO.output(DIR_LEFT, GPIO.HIGH)
+        dutyL = min(left_speed, 100)
+    else:
+        GPIO.output(DIR_LEFT, GPIO.LOW)
+        dutyL = min(-left_speed, 100)
+
+    # RIGHT
+    if right_speed >= 0:
+        GPIO.output(DIR_RIGHT, GPIO.HIGH)
+        dutyR = min(right_speed, 100)
+    else:
+        GPIO.output(DIR_RIGHT, GPIO.LOW)
+        dutyR = min(-right_speed, 100)
+
+    pwmL.ChangeDutyCycle(dutyL)
+    pwmR.ChangeDutyCycle(dutyR)
+
+def stop_motors():
+    pwmL.ChangeDutyCycle(0)
+    pwmR.ChangeDutyCycle(0)
+
+print("Two-wheel motor test")
+print("Commands:")
+print("  w = forward")
+print("  s = backward")
+print("  a = turn left (pivot)")
+print("  d = turn right (pivot)")
+print("  x = stop")
+print("  q = quit")
+print("Speed is a number from 0 to 100.\n")
+
+try:
+    while True:
+        cmd = input("Command [w/s/a/d/x/q] then speed (e.g. w 40): ").strip().lower()
+
+        if not cmd:
+            continue
+
+        if cmd.startswith('q'):
+            break
+
+        parts = cmd.split()
+        if len(parts) == 1:
+            key = parts[0]
+            speed = 40  # default
+        else:
+            key = parts[0]
+            try:
+                speed = int(parts[1])
+            except ValueError:
+                print("Invalid speed, using 40.")
+                speed = 40
+
+        speed = max(0, min(speed, 100))
+
+        if key == 'w':
+            set_motors(speed, speed)
+        elif key == 's':
+            set_motors(-speed, -speed)
+        elif key == 'a':
+            # left backward, right forward
+            set_motors(-speed, speed)
+        elif key == 'd':
+            # left forward, right backward
+            set_motors(speed, -speed)
+        elif key == 'x':
+            stop_motors()
+        else:
+            print("Unknown command.")
+
+except KeyboardInterrupt:
+    pass
+finally:
+    stop_motors()
+    pwmL.stop()
+    pwmR.stop()
+    GPIO.cleanup()
+    print("\nMotors stopped and GPIO cleaned up.")
